@@ -2,21 +2,15 @@
   <Import Project="..\CodeGeneration.Roslyn.Tasks\build\CodeGeneration.Roslyn.BuildTime.props" />
 
   <PropertyGroup>
-    <TargetFramework>net462</TargetFramework>
+    <TargetFramework>netcoreapp2.0</TargetFramework>
     <CodeGenerationRoslynToolsRootPath>$(OutputPath)..\..\CodeGeneration.Roslyn.Tasks\$(Configuration)\</CodeGenerationRoslynToolsRootPath>
-    <GenerateCodeFromAttributesToolPathOverride>$(OutputPath)..\..\CodeGeneration.Roslyn.Tool\$(Configuration)\netcoreapp1.0\dotnet-codegen.dll</GenerateCodeFromAttributesToolPathOverride>
+    <GenerateCodeFromAttributesToolPathOverride>$(OutputPath)..\..\CodeGeneration.Roslyn.Tool\$(Configuration)\netcoreapp2.0\dotnet-codegen.dll</GenerateCodeFromAttributesToolPathOverride>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Update="**\*.cs">
-      <Generator>MSBuild:GenerateCodeFromAttributes</Generator>
-    </Compile>
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Xunit" Version="2.2.0" />
     <PackageReference Include="Xunit.runner.visualstudio" Version="2.2.0" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.3.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,6 +23,57 @@
       <UndefineProperties>TargetFramework</UndefineProperties>
     </ProjectReference>
   </ItemGroup>
+  
+  <PropertyGroup>
+    <PrepareResourcesDependsOn>
+      GenerateCodeFromAttributes;
+      $(PrepareResourcesDependsOn)
+    </PrepareResourcesDependsOn>
 
-  <Import Project="..\CodeGeneration.Roslyn.Tasks\build\CodeGeneration.Roslyn.BuildTime.targets" />
+    <CoreCompileDependsOn>
+      GenerateCodeFromAttributes;
+      $(CoreCompileDependsOn)
+    </CoreCompileDependsOn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Update="@(Compile)">
+      <Generator>MSBuild:GenerateCodeFromAttributes</Generator>
+    </Compile>
+  </ItemGroup>
+
+  <Target Name="GenerateCodeFromAttributes" DependsOnTargets="ResolveReferences" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_CodeGenResponseFile>$(IntermediateOutputPath)CodeGen.rsp</_CodeGenResponseFile>
+      <_CodeGenOutputPath>$(IntermediateOutputPath)codegen\</_CodeGenOutputPath>
+      <_CodeGenGeneratedSourceListFile>$(IntermediateOutputPath)CodeGen.FileList.txt</_CodeGenGeneratedSourceListFile>
+    </PropertyGroup>
+    <MakeDir Directories="$(_CodeGenOutputPath)" />
+    <ItemGroup>
+      <_CodeGenResponseFileLine Include="@(ReferencePath->'-r%0a%(FullPath)')" />
+      <_CodeGenResponseFileLine Include="@(GeneratorAssemblySearchPaths->'--generatorSearchPath%0a%(FullPath)')" />
+      <_CodeGenResponseFileLine Include="--out" />
+      <_CodeGenResponseFileLine Include="$(_CodeGenOutputPath)" />
+      <_CodeGenResponseFileLine Include="--generatedFilesList" />
+      <_CodeGenResponseFileLine Include="$(_CodeGenGeneratedSourceListFile)" />
+      <_CodeGenResponseFileLine Include="--" />
+      <_CodeGenResponseFileLine Include="@(Compile->'%(FullPath)')" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_CodeGenResponseFile)" Lines="@(_CodeGenResponseFileLine)" Overwrite="true" />
+    <ItemGroup>
+      <FileWrites Include="$(_CodeGenResponseFile)" />
+    </ItemGroup>
+    <Exec Command="dotnet $(GenerateCodeFromAttributesToolPathOverride) @$(_CodeGenResponseFile)" />
+    <ItemGroup>
+      <FileWrites Include="$(_CodeGenGeneratedSourceListFile)" Condition="Exists('$(_CodeGenGeneratedSourceListFile)')" />
+    </ItemGroup>
+    <ReadLinesFromFile File="$(_CodeGenGeneratedSourceListFile)" Condition="Exists('$(_CodeGenGeneratedSourceListFile)')">
+      <Output TaskParameter="Lines" ItemName="_GeneratedCompileFiles" />
+      <Output TaskParameter="Lines" ItemName="FileWrites" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <Compile Include="@(_GeneratedCompileFiles)" />
+    </ItemGroup>
+  </Target>
+
 </Project>
